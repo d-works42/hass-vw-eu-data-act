@@ -131,3 +131,7 @@ official PDF and committed to the repo. To regenerate from a newer PDF:
 python -m venv .venv && .venv/bin/pip install pdfplumber
 .venv/bin/python tools/parse_dictionary.py path/to/DataDictionary.pdf
 ```
+
+## License
+
+Released under the [MIT License](LICENSE).
