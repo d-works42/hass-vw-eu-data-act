@@ -63,7 +63,3 @@ MIN_INTERVAL = timedelta(seconds=30)
 
 # Files with this suffix carry no payload and are skipped.
 NO_CONTENT_SUFFIX = "_no_content_found.zip"
-
-# Persisted storage
-STORAGE_VERSION = 1
-STORAGE_KEY = DOMAIN + "_{entry_id}"

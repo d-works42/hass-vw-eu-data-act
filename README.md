@@ -19,9 +19,9 @@ Home Assistant.
   The integration refreshes shortly after each expected drop; if nothing new is
   available it retries once a minute until the next dataset appears, then
   resumes the 15-minute cadence.
-- **Historical backfill**: the portal only keeps the most recent ~30 datasets.
-  On setup (and after restarts) any not-yet-ingested datasets are pulled and
-  imported into Home Assistant long-term statistics.
+- **History** is provided by Home Assistant's normal recorder: numeric sensors
+  with a state class accrue long-term statistics from their live values going
+  forward (the integration does not back-fill past datapoints — see notes).
 
 ## Prerequisites — enable continuous data on the portal first
 
@@ -84,10 +84,11 @@ Once datasets are being generated, continue with the installation below.
 
 ## Notes & limitations
 
-- **Statistics resolution.** Backfilled history is imported into Home Assistant
-  long-term statistics, which are **hourly-bucketed** — so re-ingested
-  historical points appear at hourly resolution. Going forward, the live sensor
-  states are recorded by Home Assistant at full (~15-minute) resolution.
+- **No historical back-fill.** The integration only records values from the
+  moment it's running (Home Assistant's recorder builds history/statistics from
+  the live sensor states). It does **not** import the portal's last ~30 datasets
+  into long-term statistics — doing so collided with the recorder's own
+  statistics for the same entities and could corrupt unrelated statistics.
 - Datasets named `*_no_content_found.zip` are skipped (the vehicle produced no
   payload for that interval).
 - Credentials are stored in the Home Assistant config entry and used only to

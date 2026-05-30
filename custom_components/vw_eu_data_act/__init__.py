@@ -41,7 +41,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: EudaConfigEntry) -> bool
         client = EudaApiClient(session, entry.data[CONF_EMAIL], entry.data[CONF_PASSWORD])
         coordinator = EudaCoordinator(hass, entry, client)
 
-        await coordinator.async_load_store()
         await coordinator.async_config_entry_first_refresh()
 
         entry.runtime_data = EudaRuntimeData(coordinator=coordinator, session=session)
@@ -51,9 +50,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: EudaConfigEntry) -> bool
         await _async_migrate_raw_unique_ids(hass, entry)
 
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-        # Entities now exist -> backfill historical statistics.
-        await coordinator.async_flush_statistics()
     except Exception:
         # Setup failed: HA will not call async_unload_entry, so close the
         # session here to avoid leaking it (and its connector).
