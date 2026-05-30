@@ -71,8 +71,11 @@ class EudaCoordinator(DataUpdateCoordinator[dict[str, DataPoint]]):
         try:
             listing = await self.client.async_list_datasets(self.vin, self.identifier)
         except AuthError as err:
+            # Retry soon rather than waiting the full ~15-min cadence.
+            self.update_interval = RETRY_INTERVAL
             raise UpdateFailed(f"Authentication failed: {err}") from err
         except ApiError as err:
+            self.update_interval = RETRY_INTERVAL
             if "HTTP 400" in str(err):
                 # The data-delivery endpoint returns 400 until the portal has
                 # finished provisioning a newly enabled continuous data request,
@@ -107,7 +110,7 @@ class EudaCoordinator(DataUpdateCoordinator[dict[str, DataPoint]]):
             )
             self.latest_dataset = Dataset.from_json(payload)
         except ApiError as err:
-            self._reschedule(listing)
+            self.update_interval = RETRY_INTERVAL  # retry soon, not next cadence
             if self.data:
                 _LOGGER.warning("Could not download newest %s: %s", newest["name"], err)
                 return self.data

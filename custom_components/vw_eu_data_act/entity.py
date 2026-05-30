@@ -27,6 +27,18 @@ class EudaEntity(CoordinatorEntity[EudaCoordinator]):
             serial_number=vin,
         )
 
+    @property
+    def available(self) -> bool:
+        """Stay available across transient poll failures.
+
+        The portal only publishes a new dataset every ~15 min and we keep the
+        last one, so a failed refresh (e.g. a transient DNS/network blip) should
+        keep showing the last known values rather than flipping every entity to
+        "unavailable". We only report unavailable until the first dataset has
+        ever loaded.
+        """
+        return self.coordinator.data is not None
+
     def _sticky(self, value):
         """Return ``value``, or the last known value if this update omits it."""
         self._last_value = sticky(self._last_value, value)
