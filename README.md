@@ -55,7 +55,7 @@ Once datasets are being generated, continue with the installation below.
 1. In Home Assistant go to **HACS** (sidebar).
 2. Open the **⋮** menu (top-right) → **Custom repositories**.
 3. Add this repository:
-   - **Repository:** `https://github.com/mikrohard/vw-eu-data-act`
+   - **Repository:** `https://github.com/mikrohard/hass-vw-eu-data-act`
    - **Type / Category:** **Integration**
 
    Then click **Add**.
