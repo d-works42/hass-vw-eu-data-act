@@ -261,6 +261,32 @@ def resolve_distance_unit(enum_value, default: str | None = None) -> str | None:
     return default
 
 
+# Charge-rate unit enums (battery_state_report.charge_rate_unit) -> HA unit.
+# The charge rate is expressed as range gained over time and the unit (km vs
+# miles, per hour vs per minute) varies by vehicle/region, so it is read from
+# the companion charge_rate_unit field rather than hardcoded.
+CHARGE_RATE_UNIT_BY_ENUM: dict[str, str] = {
+    "CHARGE_RATE_UNIT_KM_PER_H": "km/h",
+    "CHARGE_RATE_UNIT_KM_PER_MIN": "km/min",
+    "CHARGE_RATE_UNIT_MILES_PER_H": "mi/h",
+    "CHARGE_RATE_UNIT_MILES_PER_MIN": "mi/min",
+}
+
+
+def resolve_charge_rate_unit(enum_value, default: str | None = None) -> str | None:
+    """Map a charge-rate-unit enum (e.g. "CHARGE_RATE_UNIT_KM_PER_H") to "km/h"."""
+    if isinstance(enum_value, str):
+        return CHARGE_RATE_UNIT_BY_ENUM.get(enum_value.strip().upper(), default)
+    return default
+
+
+# Named unit resolvers selectable per curated sensor via ``unit_resolver``.
+UNIT_RESOLVERS = {
+    "distance": resolve_distance_unit,
+    "charge_rate": resolve_charge_rate_unit,
+}
+
+
 @dataclass(frozen=True)
 class CuratedSensor:
     field_name: str
@@ -274,6 +300,8 @@ class CuratedSensor:
     # companion field holding the unit enum (e.g. "mileage.unit"); when set, the
     # sensor's unit is resolved from it at runtime, falling back to ``unit``.
     unit_field: str | None = None
+    # which named resolver in UNIT_RESOLVERS to apply to ``unit_field``'s value.
+    unit_resolver: str = "distance"
 
 
 @dataclass(frozen=True)
@@ -291,6 +319,23 @@ CURATED_SENSORS: tuple[CuratedSensor, ...] = (
     CuratedSensor("settings.target_soc", "Target charge level", None, "%", "measurement", icon="mdi:battery-charging-80"),
     CuratedSensor("battery_state_report.charge_bulk_threshold", "Charge bulk threshold", None, "%", "measurement", icon="mdi:battery-charging-100"),
     CuratedSensor("battery_state_report.charge_power", "Charge power", "power", "kW", "measurement"),
+    CuratedSensor(
+        "battery_state_report.charge_rate", "Charge rate", None, "km/h", "measurement",
+        icon="mdi:speedometer",
+        unit_field="battery_state_report.charge_rate_unit", unit_resolver="charge_rate",
+    ),
+    CuratedSensor(
+        "battery_state_report.charge_energy", "Charged energy", "energy", "kWh",
+        "total_increasing", icon="mdi:lightning-bolt-circle",
+    ),
+    CuratedSensor(
+        "battery_state_report.remaining_charging_time_complete", "Remaining charging time",
+        "duration", "s", "measurement", transform="duration_s", icon="mdi:battery-clock",
+    ),
+    CuratedSensor(
+        "battery_state_report.remaining_charging_time_bulk", "Remaining time to bulk",
+        "duration", "s", "measurement", transform="duration_s", icon="mdi:battery-clock",
+    ),
     CuratedSensor("mileage.value", "Mileage", "distance", "km", "total_increasing", icon="mdi:counter", unit_field="mileage.unit"),
     # Per the data dictionary these are the HV battery module min/max temps,
     # not climate setpoints.
@@ -303,6 +348,7 @@ CURATED_SENSORS: tuple[CuratedSensor, ...] = (
     # enum / text status sensors
     CuratedSensor("charging_state_report.current_charge_state", "Charge state", icon="mdi:ev-station"),
     CuratedSensor("charging_state_report.charge_mode", "Charge mode", icon="mdi:ev-station"),
+    CuratedSensor("charging_state_report.charge_type", "Charge type", icon="mdi:power-plug"),
     CuratedSensor("charging_state_report.charging_scenario", "Charging scenario", icon="mdi:ev-station"),
     CuratedSensor("charging_state_report.immediate_action_state", "Charging action state", icon="mdi:ev-station"),
     CuratedSensor("settings.charge_mode_selection", "Charge mode selection", icon="mdi:cog"),

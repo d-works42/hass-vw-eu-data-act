@@ -16,6 +16,7 @@ from .coordinator import EudaCoordinator
 from .data import (
     CURATED_BINARY,
     CURATED_SENSORS,
+    UNIT_RESOLVERS,
     CuratedSensor,
     DataPoint,
     friendly_name,
@@ -94,7 +95,8 @@ class EudaCuratedSensor(EudaEntity, SensorEntity):
         if cur.unit_field:
             dp = _find_by_field(self.coordinator.data or {}, cur.unit_field)
             if dp is not None:
-                resolved = resolve_distance_unit(dp.value)
+                resolver = UNIT_RESOLVERS.get(cur.unit_resolver, resolve_distance_unit)
+                resolved = resolver(dp.value)
                 if resolved:
                     return resolved
         return cur.unit
