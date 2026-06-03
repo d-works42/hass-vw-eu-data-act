@@ -4,6 +4,7 @@ This module intentionally has **no Home Assistant imports** so the parsing and
 mapping logic can be unit-tested offline. Platform modules translate the plain
 string device-class / unit values here into HA enums.
 """
+
 from __future__ import annotations
 
 import json
@@ -280,6 +281,45 @@ def resolve_charge_rate_unit(enum_value, default: str | None = None) -> str | No
     return default
 
 
+def decikelvin_to_celsius(raw: str) -> float | None:
+    """Convert deci-Kelvin (e.g., "2921") to Celsius.
+
+    Outside temperature is reported in deci-Kelvin (dK):
+    - 2921 dK = 292.1 K = 19.06°C
+    """
+    try:
+        dk = float(raw)
+        kelvin = dk / 10
+        celsius = kelvin - 273.15
+        return round(celsius, 1)
+    except (ValueError, TypeError):
+        return None
+
+
+def abs_value(value) -> float | None:
+    """Return absolute value, handling negative maintenance intervals.
+
+    Maintenance intervals can be negative (overdue). Take absolute value
+    for display, as the sign indicates past-due status.
+    """
+    try:
+        return abs(float(value))
+    except (ValueError, TypeError):
+        return None
+
+
+def fuel_consumption_l_per_1000km_to_l_per_100km(value) -> float | None:
+    """Convert fuel consumption from L/1000km to L/100km.
+
+    The API reports fuel consumption in L/1000km (e.g., 168 L/1000km).
+    Convert to standard L/100km by dividing by 10 (e.g., 16.8 L/100km).
+    """
+    try:
+        return round(float(value) / 10, 1)
+    except (ValueError, TypeError):
+        return None
+
+
 # Named unit resolvers selectable per curated sensor via ``unit_resolver``.
 UNIT_RESOLVERS = {
     "distance": resolve_distance_unit,
@@ -302,6 +342,8 @@ class CuratedSensor:
     unit_field: str | None = None
     # which named resolver in UNIT_RESOLVERS to apply to ``unit_field``'s value.
     unit_resolver: str = "distance"
+    # number of decimal places to show (None = auto)
+    suggested_display_precision: int | None = None
 
 
 @dataclass(frozen=True)
@@ -315,51 +357,624 @@ class CuratedBinary:
 
 # device_class / unit / state_class strings equal HA's StrEnum values.
 CURATED_SENSORS: tuple[CuratedSensor, ...] = (
+    # === Charging & Battery (existing) ===
     CuratedSensor("battery_state_report.soc", "Battery", "battery", "%", "measurement"),
-    CuratedSensor("settings.target_soc", "Target charge level", None, "%", "measurement", icon="mdi:battery-charging-80"),
-    CuratedSensor("battery_state_report.charge_bulk_threshold", "Charge bulk threshold", None, "%", "measurement", icon="mdi:battery-charging-100"),
-    CuratedSensor("battery_state_report.charge_power", "Charge power", "power", "kW", "measurement"),
     CuratedSensor(
-        "battery_state_report.charge_rate", "Charge rate", None, "km/h", "measurement",
+        "settings.target_soc",
+        "Target charge level",
+        None,
+        "%",
+        "measurement",
+        icon="mdi:battery-charging-80",
+    ),
+    CuratedSensor(
+        "battery_state_report.charge_bulk_threshold",
+        "Charge bulk threshold",
+        None,
+        "%",
+        "measurement",
+        icon="mdi:battery-charging-100",
+    ),
+    CuratedSensor(
+        "battery_state_report.charge_power",
+        "Charge power",
+        "power",
+        "kW",
+        "measurement",
+    ),
+    CuratedSensor(
+        "battery_state_report.charge_rate",
+        "Charge rate",
+        None,
+        "km/h",
+        "measurement",
         icon="mdi:speedometer",
-        unit_field="battery_state_report.charge_rate_unit", unit_resolver="charge_rate",
+        unit_field="battery_state_report.charge_rate_unit",
+        unit_resolver="charge_rate",
     ),
     CuratedSensor(
-        "battery_state_report.charge_energy", "Charged energy", "energy", "kWh",
-        "total_increasing", icon="mdi:lightning-bolt-circle",
+        "battery_state_report.charge_energy",
+        "Charged energy",
+        "energy",
+        "kWh",
+        "total_increasing",
+        icon="mdi:lightning-bolt-circle",
     ),
     CuratedSensor(
-        "battery_state_report.remaining_charging_time_complete", "Remaining charging time",
-        "duration", "s", "measurement", transform="duration_s", icon="mdi:battery-clock",
+        "battery_state_report.remaining_charging_time_complete",
+        "Remaining charging time",
+        "duration",
+        "s",
+        "measurement",
+        transform="duration_s",
+        icon="mdi:battery-clock",
     ),
     CuratedSensor(
-        "battery_state_report.remaining_charging_time_bulk", "Remaining time to bulk",
-        "duration", "s", "measurement", transform="duration_s", icon="mdi:battery-clock",
+        "battery_state_report.remaining_charging_time_bulk",
+        "Remaining time to bulk",
+        "duration",
+        "s",
+        "measurement",
+        transform="duration_s",
+        icon="mdi:battery-clock",
     ),
-    CuratedSensor("mileage.value", "Mileage", "distance", "km", "total_increasing", icon="mdi:counter", unit_field="mileage.unit"),
-    # Per the data dictionary these are the HV battery module min/max temps,
-    # not climate setpoints.
-    CuratedSensor("min_temperature", "Battery min temperature", "temperature", "°C", "measurement"),
-    CuratedSensor("max_temperature", "Battery max temperature", "temperature", "°C", "measurement"),
-    CuratedSensor("remaining_climate_time", "Remaining climate time", "duration", "s", "measurement", transform="duration_s"),
-    CuratedSensor("range", "Range", "distance", "km", "measurement", icon="mdi:map-marker-distance"),
-    CuratedSensor("scr_range", "SCR range", "distance", "km", "measurement", icon="mdi:map-marker-distance"),
-    CuratedSensor("residual_energy_in_percent", "Residual energy", None, "%", "measurement", icon="mdi:battery"),
-    # enum / text status sensors
-    CuratedSensor("charging_state_report.current_charge_state", "Charge state", icon="mdi:ev-station"),
-    CuratedSensor("charging_state_report.charge_mode", "Charge mode", icon="mdi:ev-station"),
-    CuratedSensor("charging_state_report.charge_type", "Charge type", icon="mdi:power-plug"),
-    CuratedSensor("charging_state_report.charging_scenario", "Charging scenario", icon="mdi:ev-station"),
-    CuratedSensor("charging_state_report.immediate_action_state", "Charging action state", icon="mdi:ev-station"),
-    CuratedSensor("settings.charge_mode_selection", "Charge mode selection", icon="mdi:cog"),
-    CuratedSensor("settings.max_charge_current_ac", "Max AC charge current", icon="mdi:current-ac"),
-    CuratedSensor("window_heating_state", "Window heating", icon="mdi:car-defrost-rear"),
+    # === Distance & Range ===
+    CuratedSensor(
+        "mileage",
+        "Mileage",
+        "distance",
+        "km",
+        "total_increasing",
+        icon="mdi:counter",
+        suggested_display_precision=0,
+    ),
+    CuratedSensor(
+        "cruising_range_combined",
+        "Range (combined)",
+        "distance",
+        "km",
+        "measurement",
+        icon="mdi:map-marker-distance",
+        suggested_display_precision=0,
+    ),
+    CuratedSensor(
+        "cruising_range_primary_engine",
+        "Range (primary)",
+        "distance",
+        "km",
+        "measurement",
+        icon="mdi:gas-station",
+        suggested_display_precision=0,
+    ),
+    CuratedSensor(
+        "cruising_range_secondary_engine",
+        "Range (secondary)",
+        "distance",
+        "km",
+        "measurement",
+        icon="mdi:ev-station",
+        suggested_display_precision=0,
+    ),
+    CuratedSensor(
+        "range",
+        "Electric range",
+        "distance",
+        "km",
+        "measurement",
+        icon="mdi:map-marker-distance",
+        suggested_display_precision=0,
+    ),
+    CuratedSensor(
+        "scr_range",
+        "SCR range",
+        "distance",
+        "km",
+        "measurement",
+        icon="mdi:map-marker-distance",
+        suggested_display_precision=0,
+    ),
+    # === Fuel ===
+    CuratedSensor(
+        "fuel_level_current_level",
+        "Fuel level",
+        None,
+        "%",
+        "measurement",
+        icon="mdi:gas-station",
+    ),
+    CuratedSensor(
+        "fuel_level__accuracy",
+        "Fuel level accuracy",
+        None,
+        None,
+        None,
+        icon="mdi:gauge",
+    ),
+    CuratedSensor(
+        "cng_gas_level",
+        "CNG gas level",
+        None,
+        "%",
+        "measurement",
+        icon="mdi:gas-cylinder",
+    ),
+    # === Temperature ===
+    CuratedSensor(
+        "outside_temperature",
+        "Outside temperature",
+        "temperature",
+        "°C",
+        "measurement",
+        transform="decikelvin_to_celsius",
+    ),
+    CuratedSensor(
+        "min_temperature", "Battery min temperature", "temperature", "°C", "measurement"
+    ),
+    CuratedSensor(
+        "max_temperature", "Battery max temperature", "temperature", "°C", "measurement"
+    ),
+    # === Climate ===
+    CuratedSensor(
+        "remaining_climate_time",
+        "Remaining climate time",
+        "duration",
+        "s",
+        "measurement",
+        transform="duration_s",
+    ),
+    CuratedSensor(
+        "residual_energy_in_percent",
+        "Residual energy",
+        None,
+        "%",
+        "measurement",
+        icon="mdi:battery",
+    ),
+    # === Tire Pressure ===
+    CuratedSensor(
+        "tyre_pressure_actual_front_left",
+        "Tire pressure FL",
+        "pressure",
+        "bar",
+        "measurement",
+        icon="mdi:car-tire-alert",
+    ),
+    CuratedSensor(
+        "tyre_pressure_actual_front_right",
+        "Tire pressure FR",
+        "pressure",
+        "bar",
+        "measurement",
+        icon="mdi:car-tire-alert",
+    ),
+    CuratedSensor(
+        "tyre_pressure_actual_rear_left",
+        "Tire pressure RL",
+        "pressure",
+        "bar",
+        "measurement",
+        icon="mdi:car-tire-alert",
+    ),
+    CuratedSensor(
+        "tyre_pressure_actual_rear_right",
+        "Tire pressure RR",
+        "pressure",
+        "bar",
+        "measurement",
+        icon="mdi:car-tire-alert",
+    ),
+    CuratedSensor(
+        "tyre_pressure_actual_spare_tyre",
+        "Tire pressure spare",
+        "pressure",
+        "bar",
+        "measurement",
+        icon="mdi:car-tire-alert",
+    ),
+    CuratedSensor(
+        "tyre_pressure_differential_front_left",
+        "Tire pressure diff FL",
+        None,
+        None,
+        None,
+        icon="mdi:gauge",
+    ),
+    CuratedSensor(
+        "tyre_pressure_differential_front_right",
+        "Tire pressure diff FR",
+        None,
+        None,
+        None,
+        icon="mdi:gauge",
+    ),
+    CuratedSensor(
+        "tyre_pressure_differential_rear_left",
+        "Tire pressure diff RL",
+        None,
+        None,
+        None,
+        icon="mdi:gauge",
+    ),
+    CuratedSensor(
+        "tyre_pressure_differential_rear_right",
+        "Tire pressure diff RR",
+        None,
+        None,
+        None,
+        icon="mdi:gauge",
+    ),
+    CuratedSensor(
+        "tyre_pressure_differential_spare_tyre",
+        "Tire pressure diff spare",
+        None,
+        None,
+        None,
+        icon="mdi:gauge",
+    ),
+    # === Window Positions (0-100%) ===
+    CuratedSensor(
+        "position_front_left_door_window_lifter",
+        "Front left window position",
+        None,
+        "%",
+        None,
+        icon="mdi:window-open-variant",
+    ),
+    CuratedSensor(
+        "position_front_right_door_window_lifter",
+        "Front right window position",
+        None,
+        "%",
+        None,
+        icon="mdi:window-open-variant",
+    ),
+    CuratedSensor(
+        "position_rear_left_door_window_lifter",
+        "Rear left window position",
+        None,
+        "%",
+        None,
+        icon="mdi:window-open-variant",
+    ),
+    CuratedSensor(
+        "position_rear_right_door_window_lifter",
+        "Rear right window position",
+        None,
+        "%",
+        None,
+        icon="mdi:window-open-variant",
+    ),
+    # === Sunroof ===
+    CuratedSensor(
+        "position_sunroof_motor_hood_1",
+        "Sunroof position",
+        None,
+        "%",
+        None,
+        icon="mdi:car-convertible",
+    ),
+    # === Maintenance ===
+    CuratedSensor(
+        "maintenance_interval__time_until_inspection",
+        "Inspection interval",
+        None,
+        "d",
+        "measurement",
+        icon="mdi:calendar-clock",
+        transform="abs",
+        suggested_display_precision=0,
+    ),
+    CuratedSensor(
+        "maintenance_interval__time_until_oil_change",
+        "Oil change interval",
+        None,
+        "d",
+        "measurement",
+        icon="mdi:oil",
+        transform="abs",
+        suggested_display_precision=0,
+    ),
+    CuratedSensor(
+        "maintenance_interval_distance_until_inspection",
+        "Inspection distance",
+        "distance",
+        "km",
+        "measurement",
+        icon="mdi:car-wrench",
+        transform="abs",
+        suggested_display_precision=0,
+    ),
+    CuratedSensor(
+        "maintenance_interval_distance_until_oil_change",
+        "Oil change distance",
+        "distance",
+        "km",
+        "measurement",
+        icon="mdi:oil",
+        transform="abs",
+        suggested_display_precision=0,
+    ),
+    # === Trip Statistics - Long Term ===
+    CuratedSensor(
+        "long_term_data_mileage",
+        "Trip distance (long)",
+        "distance",
+        "km",
+        "total_increasing",
+        icon="mdi:map-marker-distance",
+        suggested_display_precision=0,
+    ),
+    CuratedSensor(
+        "long_term_data_start_mileage",
+        "Trip start mileage (long)",
+        "distance",
+        "km",
+        None,
+        icon="mdi:counter",
+        suggested_display_precision=0,
+    ),
+    CuratedSensor(
+        "long_term_data_average_fuel_consumption",
+        "Avg fuel consumption (long)",
+        None,
+        "L/100km",
+        "measurement",
+        icon="mdi:gas-station",
+        transform="fuel_consumption",
+        suggested_display_precision=1,
+    ),
+    CuratedSensor(
+        "long_term_data_average_speed",
+        "Avg speed (long)",
+        None,
+        "km/h",
+        "measurement",
+        icon="mdi:speedometer",
+    ),
+    CuratedSensor(
+        "long_term_data_travel_time",
+        "Travel time (long)",
+        "duration",
+        "min",
+        "total_increasing",
+        icon="mdi:clock-outline",
+    ),
+    # === Trip Statistics - Short Term ===
+    CuratedSensor(
+        "short_term_data_mileage",
+        "Trip distance (short)",
+        "distance",
+        "km",
+        "total_increasing",
+        icon="mdi:map-marker-distance",
+        suggested_display_precision=0,
+    ),
+    CuratedSensor(
+        "short_term_data_start_mileage",
+        "Trip start mileage (short)",
+        "distance",
+        "km",
+        None,
+        icon="mdi:counter",
+        suggested_display_precision=0,
+    ),
+    CuratedSensor(
+        "short_term_data_average_fuel_consumption",
+        "Avg fuel consumption (short)",
+        None,
+        "L/100km",
+        "measurement",
+        icon="mdi:gas-station",
+        transform="fuel_consumption",
+        suggested_display_precision=1,
+    ),
+    CuratedSensor(
+        "short_term_data_travel_time",
+        "Travel time (short)",
+        "duration",
+        "min",
+        "total_increasing",
+        icon="mdi:clock-outline",
+    ),
+    # === Oil Level ===
+    CuratedSensor(
+        "oil_level_actual_level", "Oil level", None, "L", "measurement", icon="mdi:oil"
+    ),
+    CuratedSensor(
+        "oil_level_additional_oil_level",
+        "Additional oil level",
+        None,
+        "L",
+        "measurement",
+        icon="mdi:oil",
+    ),
+    CuratedSensor(
+        "oil_level_total_max", "Max oil level", None, "L", None, icon="mdi:oil"
+    ),
+    CuratedSensor(
+        "oil_level_dipstick_indicator_function",
+        "Oil dipstick indicator",
+        None,
+        None,
+        None,
+        icon="mdi:gauge",
+    ),
+    # === Enum/Status Sensors ===
+    CuratedSensor(
+        "charging_state_report.current_charge_state",
+        "Charge state",
+        icon="mdi:ev-station",
+    ),
+    CuratedSensor(
+        "charging_state_report.charge_mode", "Charge mode", icon="mdi:ev-station"
+    ),
+    CuratedSensor(
+        "charging_state_report.charge_type", "Charge type", icon="mdi:power-plug"
+    ),
+    CuratedSensor(
+        "charging_state_report.charging_scenario",
+        "Charging scenario",
+        icon="mdi:ev-station",
+    ),
+    CuratedSensor(
+        "charging_state_report.immediate_action_state",
+        "Charging action state",
+        icon="mdi:ev-station",
+    ),
+    CuratedSensor(
+        "settings.charge_mode_selection", "Charge mode selection", icon="mdi:cog"
+    ),
+    CuratedSensor(
+        "settings.max_charge_current_ac", "Max AC charge current", icon="mdi:current-ac"
+    ),
+    CuratedSensor(
+        "window_heating_state", "Window heating", icon="mdi:car-defrost-rear"
+    ),
+    CuratedSensor("bem_level", "BEM level", None, None, None, icon="mdi:information"),
+    CuratedSensor(
+        "parking_lights",
+        "Parking lights",
+        None,
+        None,
+        None,
+        icon="mdi:car-parking-lights",
+    ),
 )
 
 CURATED_BINARY: tuple[CuratedBinary, ...] = (
-    # value "true" == locked; HA LOCK device class: on == unlocked -> invert.
-    CuratedBinary("locked", "Doors locked", "lock", invert=True),
+    # === General Lock State ===
+    CuratedBinary("locked", "Vehicle locked", "lock", invert=True, icon="mdi:car-key"),
+    # === Individual Door Lock States (value 2=locked, 3=unlocked) ===
+    CuratedBinary(
+        "locked_state_front_left_door",
+        "Front left door lock",
+        "lock",
+        invert=True,
+        icon="mdi:car-door-lock",
+    ),
+    CuratedBinary(
+        "locked_state_front_right_door",
+        "Front right door lock",
+        "lock",
+        invert=True,
+        icon="mdi:car-door-lock",
+    ),
+    CuratedBinary(
+        "locked_state__rear_left_door",
+        "Rear left door lock",
+        "lock",
+        invert=True,
+        icon="mdi:car-door-lock",
+    ),
+    CuratedBinary(
+        "locked_state_rear_right_door",
+        "Rear right door lock",
+        "lock",
+        invert=True,
+        icon="mdi:car-door-lock",
+    ),
+    CuratedBinary(
+        "locked_state_tailgate",
+        "Tailgate lock",
+        "lock",
+        invert=True,
+        icon="mdi:car-door-lock",
+    ),
+    CuratedBinary(
+        "locked_state_front_engine_bonnet",
+        "Hood lock",
+        "lock",
+        invert=True,
+        icon="mdi:car-door-lock",
+    ),
+    # === Door Open States (value 2=open, 3=closed, 0=unsupported, 1=invalid) ===
+    CuratedBinary(
+        "open_state_front_left_door", "Front left door", "door", icon="mdi:car-door"
+    ),
+    CuratedBinary(
+        "open_state_front_right_door", "Front right door", "door", icon="mdi:car-door"
+    ),
+    CuratedBinary(
+        "open_state_rear_left_door", "Rear left door", "door", icon="mdi:car-door"
+    ),
+    CuratedBinary(
+        "open_state_rear_right_door", "Rear right door", "door", icon="mdi:car-door"
+    ),
+    CuratedBinary("open_state_tailgate", "Tailgate", "door", icon="mdi:car-back"),
+    CuratedBinary("open_state_front_engine_bonnet", "Hood", "door", icon="mdi:car"),
+    # === Door Safe States (value 2=safe, 3=unsafe, 0=unsupported, 1=invalid) ===
+    CuratedBinary(
+        "safe_state_front_right_door",
+        "Front right door safe",
+        "safety",
+        invert=True,
+        icon="mdi:shield-car",
+    ),
+    CuratedBinary(
+        "safe_state_rear_left_door",
+        "Rear left door safe",
+        "safety",
+        invert=True,
+        icon="mdi:shield-car",
+    ),
+    CuratedBinary(
+        "safe_state_rear_right_door",
+        "Rear right door safe",
+        "safety",
+        invert=True,
+        icon="mdi:shield-car",
+    ),
+    CuratedBinary(
+        "safe_state_tailgate",
+        "Tailgate safe",
+        "safety",
+        invert=True,
+        icon="mdi:shield-car",
+    ),
+    CuratedBinary(
+        "safe_state_front_engine_bonnet",
+        "Hood safe",
+        "safety",
+        invert=True,
+        icon="mdi:shield-car",
+    ),
+    # === Window States (value 2=open, 3=closed, 0=unsupported, 1=invalid) ===
+    CuratedBinary(
+        "state_front_left_door_window_lifter",
+        "Front left window",
+        "window",
+        icon="mdi:window-open-variant",
+    ),
+    CuratedBinary(
+        "state_front_right_door_window_lifter",
+        "Front right window",
+        "window",
+        icon="mdi:window-open-variant",
+    ),
+    CuratedBinary(
+        "state_rear_left_door_window_lifter",
+        "Rear left window",
+        "window",
+        icon="mdi:window-open-variant",
+    ),
+    CuratedBinary(
+        "state_rear_right_door_window_lifter",
+        "Rear right window",
+        "window",
+        icon="mdi:window-open-variant",
+    ),
+    # === Sunroof States ===
+    CuratedBinary(
+        "state_sunroof_motor_hood_1", "Sunroof", "window", icon="mdi:car-convertible"
+    ),
+    CuratedBinary(
+        "state_sunroof_motor_hood_3", "Sunroof motor 3", None, icon="mdi:car-convertible"
+    ),
+    # === Other Binary States ===
     CuratedBinary("parking_brake", "Parking brake", None, icon="mdi:car-brake-parking"),
+    CuratedBinary("state_of_hood", "Hood state", None, icon="mdi:car"),
+    CuratedBinary("state_service_hatch", "Service hatch", None, icon="mdi:gas-station"),
+    CuratedBinary("state_spoiler", "Spoiler", None, icon="mdi:car-sports"),
 )
 
 CURATED_FIELDS: frozenset[str] = frozenset(

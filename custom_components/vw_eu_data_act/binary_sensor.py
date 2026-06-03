@@ -57,6 +57,40 @@ class EudaBinarySensor(EudaEntity, BinarySensorEntity):
     def is_on(self) -> bool | None:
         dp = _find_by_field(self.coordinator.data or {}, self._curated.field_name)
         result = None
-        if dp is not None and isinstance(dp.value, bool):
-            result = (not dp.value) if self._curated.invert else dp.value
+        
+        if dp is not None:
+            val = dp.value
+            
+            # Handle boolean values
+            if isinstance(val, bool):
+                result = (not val) if self._curated.invert else val
+            
+            # Handle integer enum values (0/1=unavailable, 2/3=states)
+            elif isinstance(val, int):
+                # 0=unsupported, 1=invalid -> unavailable (None)
+                if val in (0, 1):
+                    result = None
+                # For open_state/window_state/sunroof: 2=open, 3=closed
+                # For locked_state: 2=locked, 3=unlocked
+                # For safe_state: 2=safe, 3=unsafe
+                elif val in (2, 3):
+                    # Determine if 2=on or 3=on based on field naming
+                    if ('open_state' in self._curated.field_name or 
+                        'window_lifter' in self._curated.field_name or
+                        'state_sunroof' in self._curated.field_name or
+                        'state_of_hood' in self._curated.field_name or
+                        'state_service_hatch' in self._curated.field_name or
+                        'state_spoiler' in self._curated.field_name):
+                        # 2=open (on), 3=closed (off)
+                        is_active = (val == 2)
+                    elif 'locked_state' in self._curated.field_name or 'safe_state' in self._curated.field_name:
+                        # 2=locked/safe, 3=unlocked/unsafe
+                        # With invert=True: val==2 (locked) -> is_active=True -> inverted -> on (locked)
+                        is_active = (val == 2)
+                    else:
+                        # Default: 2=off, 3=on
+                        is_active = (val == 3)
+                    
+                    result = (not is_active) if self._curated.invert else is_active
+        
         return self._sticky(result)

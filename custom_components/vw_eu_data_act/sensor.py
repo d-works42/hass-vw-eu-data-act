@@ -80,11 +80,53 @@ class EudaCuratedSensor(EudaEntity, SensorEntity):
             self._attr_device_class = SensorDeviceClass(curated.device_class)
         if curated.state_class:
             self._attr_state_class = SensorStateClass(curated.state_class)
+        if curated.suggested_display_precision is not None:
+            self._attr_suggested_display_precision = curated.suggested_display_precision
+
+    def _apply_transform(self, value):
+        """Apply configured transform to the raw value."""
+        if value is None or not self._curated.transform:
+            return value
+        
+        transform = self._curated.transform
+        
+        if transform == "duration_s":
+            # Already handled by parse_duration_seconds in parse_value
+            return value
+        
+        if transform == "decikelvin_to_celsius":
+            from .data import decikelvin_to_celsius
+            return decikelvin_to_celsius(str(value))
+        
+        return value
 
     @property
     def native_value(self):
         dp = _find_by_field(self.coordinator.data or {}, self._curated.field_name)
-        return self._sticky(dp.value if dp else None)
+        
+        if not dp:
+            return self._sticky(None)
+        
+        raw_value = dp.value
+        
+        # Apply transforms if specified
+        if self._curated.transform:
+            if self._curated.transform == "decikelvin_to_celsius":
+                from .data import decikelvin_to_celsius
+                transformed = decikelvin_to_celsius(dp.raw_value)
+                return self._sticky(transformed)
+            
+            elif self._curated.transform == "abs":
+                from .data import abs_value
+                transformed = abs_value(raw_value)
+                return self._sticky(transformed)
+            
+            elif self._curated.transform == "fuel_consumption":
+                from .data import fuel_consumption_l_per_1000km_to_l_per_100km
+                transformed = fuel_consumption_l_per_1000km_to_l_per_100km(raw_value)
+                return self._sticky(transformed)
+        
+        return self._sticky(raw_value)
 
     @property
     def native_unit_of_measurement(self) -> str | None:
