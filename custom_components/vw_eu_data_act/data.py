@@ -831,14 +831,6 @@ CURATED_SENSORS: tuple[CuratedSensor, ...] = (
         "window_heating_state", "Window heating", icon="mdi:car-defrost-rear"
     ),
     CuratedSensor("bem_level", "BEM level", None, None, None, icon="mdi:information"),
-    CuratedSensor(
-        "parking_lights",
-        "Parking lights",
-        None,
-        None,
-        None,
-        icon="mdi:car-parking-lights",
-    ),
 )
 
 CURATED_BINARY: tuple[CuratedBinary, ...] = (
@@ -968,10 +960,16 @@ CURATED_BINARY: tuple[CuratedBinary, ...] = (
         "state_sunroof_motor_hood_1", "Sunroof", "window", icon="mdi:car-convertible"
     ),
     CuratedBinary(
-        "state_sunroof_motor_hood_3", "Sunroof motor 3", None, icon="mdi:car-convertible"
+        "state_sunroof_motor_hood_3",
+        "Sunroof motor 3",
+        None,
+        icon="mdi:car-convertible",
     ),
     # === Other Binary States ===
     CuratedBinary("parking_brake", "Parking brake", None, icon="mdi:car-brake-parking"),
+    CuratedBinary(
+        "parking_lights", "Parking lights", "light", icon="mdi:car-parking-lights"
+    ),
     CuratedBinary("state_of_hood", "Hood state", None, icon="mdi:car"),
     CuratedBinary("state_service_hatch", "Service hatch", None, icon="mdi:gas-station"),
     CuratedBinary("state_spoiler", "Spoiler", None, icon="mdi:car-sports"),

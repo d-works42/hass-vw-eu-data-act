@@ -72,6 +72,14 @@ class EudaBinarySensor(EudaEntity, BinarySensorEntity):
                 if "parking_brake" in self._curated.field_name:
                     # 0=inactive (off), 1=active (on)
                     result = val == 1
+                # Special case: parking_lights has 6 states (0-5)
+                elif "parking_lights" in self._curated.field_name:
+                    # 0=unsupported, 1=invalid -> unavailable
+                    if val in (0, 1):
+                        result = None
+                    # 2=off, 3=left, 4=right, 5=both
+                    else:
+                        result = val in (3, 4, 5)  # Any active state = ON
                 # 0=unsupported, 1=invalid -> unavailable (None)
                 elif val in (0, 1):
                     result = None
