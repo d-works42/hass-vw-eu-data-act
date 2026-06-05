@@ -786,13 +786,13 @@ CURATED_SENSORS: tuple[CuratedSensor, ...] = (
     ),
     # === Oil Level ===
     CuratedSensor(
-        "oil_level_actual_level", "Oil level", None, "L", "measurement", icon="mdi:oil"
+        "oil_level_actual_level", "Oil level", None, "%", "measurement", icon="mdi:oil"
     ),
     CuratedSensor(
         "oil_level_additional_oil_level",
         "Additional oil level",
         None,
-        "L",
+        "%",
         "measurement",
         icon="mdi:oil",
     ),
