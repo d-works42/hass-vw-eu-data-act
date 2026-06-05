@@ -187,33 +187,86 @@ class EudaCoordinator(DataUpdateCoordinator[dict[str, DataPoint]]):
         identifier from the metadata endpoint and retry once before giving up —
         so it recovers on the next cycle without needing a manual reload.
         """
-        for retried in (False, True):
-            try:
-                listing = await self.client.async_list_datasets(
-                    self.vin, self.identifier
-                )
-            except AuthError as err:
+        max_retries = 5
+        retry_delay = 10  # seconds
+
+        for identifier_retry in (False, True):
+            last_error = None
+
+            for attempt in range(max_retries):
+                try:
+                    listing = await self.client.async_list_datasets(
+                        self.vin, self.identifier
+                    )
+                    # Empty listing might mean subscription was recreated
+                    if (
+                        not listing
+                        and not identifier_retry
+                        and await self._refresh_identifier()
+                    ):
+                        _LOGGER.info(
+                            "Empty listing, retrying with refreshed identifier"
+                        )
+                        break  # Break inner loop to retry with new identifier
+                    return listing
+
+                except AuthError as err:
+                    self.update_interval = RETRY_INTERVAL
+                    raise UpdateFailed(f"Authentication failed: {err}") from err
+
+                except ApiError as err:
+                    last_error = err
+                    is_server_error = any(
+                        code in str(err)
+                        for code in ["HTTP 500", "HTTP 502", "HTTP 503", "HTTP 504"]
+                    )
+
+                    # Retry server errors with delay
+                    if is_server_error and attempt < max_retries - 1:
+                        _LOGGER.warning(
+                            "Server error listing datasets (attempt %d/%d): %s, retrying in %ds",
+                            attempt + 1,
+                            max_retries,
+                            err,
+                            retry_delay,
+                        )
+                        await asyncio.sleep(retry_delay)
+                        continue
+
+            # After all retries, try refreshing identifier once if not already tried
+            if last_error and not identifier_retry and await self._refresh_identifier():
+                _LOGGER.info("Retrying list with refreshed identifier after failures")
+                continue
+
+            # All attempts failed
+            if last_error:
                 self.update_interval = RETRY_INTERVAL
-                raise UpdateFailed(f"Authentication failed: {err}") from err
-            except ApiError as err:
-                if not retried and await self._refresh_identifier():
-                    continue
-                self.update_interval = RETRY_INTERVAL
-                if "HTTP 400" in str(err):
-                    # The data-delivery endpoint returns 400 until the portal
-                    # finishes provisioning a newly enabled data request, which
-                    # can take a few hours. HA keeps retrying until it's ready.
+
+                # HTTP 400 special case
+                if "HTTP 400" in str(last_error):
                     raise UpdateFailed(
                         "Data delivery not ready yet (HTTP 400). If you just enabled "
                         "the continuous data request on the portal, it can take a few "
                         "hours to start; will keep retrying."
-                    ) from err
-                raise UpdateFailed(str(err)) from err
-            # An empty listing can also mean the subscription was recreated.
-            if not listing and not retried and await self._refresh_identifier():
-                continue
-            return listing
-        return listing
+                    ) from last_error
+
+                # Server errors with existing data - return empty to keep old data
+                is_server_error = any(
+                    code in str(last_error)
+                    for code in ["HTTP 500", "HTTP 502", "HTTP 503", "HTTP 504"]
+                )
+                if is_server_error and self.data:
+                    _LOGGER.error(
+                        "Failed to list datasets after %d attempts: %s. Keeping previous data.",
+                        max_retries,
+                        last_error,
+                    )
+                    return []
+
+                # Other errors or no existing data
+                raise UpdateFailed(str(last_error)) from last_error
+
+        return []
 
     async def _refresh_identifier(self) -> bool:
         """Re-fetch the data-request identifier; persist it if it changed.
