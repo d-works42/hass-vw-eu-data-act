@@ -303,14 +303,15 @@ def decikelvin_to_celsius(raw: str) -> float | None:
         return None
 
 
-def abs_value(value) -> float | None:
+def abs_value(value) -> int | float | None:
     """Return absolute value, handling negative maintenance intervals.
 
     Maintenance intervals can be negative (overdue). Take absolute value
     for display, as the sign indicates past-due status.
     """
     try:
-        return abs(float(value))
+        abs_val = abs(float(value))
+        return int(abs_val) if abs_val == int(abs_val) else abs_val
     except (ValueError, TypeError):
         return None
 
