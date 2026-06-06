@@ -70,6 +70,7 @@ class EudaCoordinator(DataUpdateCoordinator[dict[str, DataPoint]]):
         self.vin: str = entry.data[CONF_VIN]
         self.identifier: str = entry.data[CONF_IDENTIFIER]
         self.latest_dataset: Dataset | None = None
+        self._is_initial_setup: bool = True
 
     async def _async_update_data(self) -> dict[str, DataPoint]:
         listing = await self._async_list_with_refresh()
@@ -88,19 +89,22 @@ class EudaCoordinator(DataUpdateCoordinator[dict[str, DataPoint]]):
         if not content:
             self._reschedule(listing)
             if self.data:
+                # Subsequent refresh: keep previous data
                 _LOGGER.debug("No new datasets available, keeping previous data")
                 return self.data
+            # First load with no data: fail so HA retries setup
             _LOGGER.warning(
-                "No datasets available yet, will retry in %s", RETRY_INTERVAL
+                "No datasets available on first load, will retry in %s", RETRY_INTERVAL
             )
-            return {}
+            raise UpdateFailed("No datasets available on first load")
 
         # Try to load datasets, starting with newest and falling back to older ones
         last_error = None
         for dataset_entry in reversed(content):
-            # Retry mechanism for transient server errors
-            max_retries = 5
-            retry_delay = 10  # seconds
+            # Use fewer, faster retries during initial setup for better UX
+            # Full retries kick in after first successful load
+            max_retries = 3 if self._is_initial_setup else 5
+            retry_delay = 3 if self._is_initial_setup else 5
 
             for attempt in range(max_retries):
                 try:
@@ -108,6 +112,7 @@ class EudaCoordinator(DataUpdateCoordinator[dict[str, DataPoint]]):
                         self.vin, self.identifier, dataset_entry["name"]
                     )
                     self.latest_dataset = Dataset.from_json(payload)
+                    self._is_initial_setup = False
                     last_error = None
                     break  # Success!
                 except ApiError as err:
@@ -155,27 +160,32 @@ class EudaCoordinator(DataUpdateCoordinator[dict[str, DataPoint]]):
         if last_error:
             self.update_interval = RETRY_INTERVAL
             if self.data:
+                # Subsequent refresh: keep previous data on failure
                 _LOGGER.debug(
                     "Could not download any dataset (last error: %s), keeping previous data",
                     last_error,
                 )
                 self._reschedule(listing)
                 return self.data
+            # First load failure: raise so HA retries setup
             _LOGGER.error(
-                "Could not download any dataset on first load: %s. Integration will load "
-                "but entities remain unavailable until data arrives. Retrying in %s",
+                "Could not download any dataset on first load: %s. Will retry in %s.",
                 last_error,
                 RETRY_INTERVAL,
             )
-            return {}
+            raise UpdateFailed(
+                f"Failed to download dataset on first load: {last_error}"
+            ) from last_error
 
         self._reschedule(listing)
 
+        # Merge new data with existing to preserve missing fields
         if self.data:
             merged = dict(self.data)
             merged.update(self.latest_dataset.points)
             return merged
 
+        # First successful load
         return self.latest_dataset.points
 
     async def _async_list_with_refresh(self) -> list[dict]:
@@ -187,8 +197,9 @@ class EudaCoordinator(DataUpdateCoordinator[dict[str, DataPoint]]):
         identifier from the metadata endpoint and retry once before giving up —
         so it recovers on the next cycle without needing a manual reload.
         """
-        max_retries = 5
-        retry_delay = 10  # seconds
+        # Use fewer, faster retries during initial setup
+        max_retries = 3 if self._is_initial_setup else 5
+        retry_delay = 3 if self._is_initial_setup else 5
 
         for identifier_retry in (False, True):
             last_error = None
@@ -263,7 +274,7 @@ class EudaCoordinator(DataUpdateCoordinator[dict[str, DataPoint]]):
                     )
                     return []
 
-                # Other errors or no existing data
+                # Other errors or first load: raise UpdateFailed
                 raise UpdateFailed(str(last_error)) from last_error
 
         return []

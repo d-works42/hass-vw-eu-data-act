@@ -31,6 +31,21 @@ def load_dictionary() -> dict[str, dict[str, str]]:
 
 
 # ---------------------------------------------------------------------------
+# Dataset format detection
+# ---------------------------------------------------------------------------
+
+
+def detect_dataset_format(points: dict[str, "DataPoint"]) -> str:
+    """Detect whether dataset uses dotted (ID.x) or flat (eGolf) naming.
+
+    Returns "dotted" if any field name contains a dot, otherwise "flat".
+    ID.x/MEB cars use dotted names (battery_state_report.soc, mileage.value),
+    while pre-ID.x cars use flat names (state_of_charge, mileage).
+    """
+    return "dotted" if any("." in dp.field_name for dp in points.values()) else "flat"
+
+
+# ---------------------------------------------------------------------------
 # Value typing
 # ---------------------------------------------------------------------------
 
@@ -363,9 +378,12 @@ class CuratedBinary:
     icon: str | None = None
 
 
-# device_class / unit / state_class strings equal HA's StrEnum values.
-CURATED_SENSORS: tuple[CuratedSensor, ...] = (
-    # === Charging & Battery (existing) ===
+# ---------------------------------------------------------------------------
+# Curated sensors for ID.x/MEB vehicles (dotted field names)
+# ---------------------------------------------------------------------------
+
+CURATED_SENSORS_DOTTED: tuple[CuratedSensor, ...] = (
+    # === Charging & Battery ===
     CuratedSensor("battery_state_report.soc", "Battery", "battery", "%", "measurement"),
     CuratedSensor(
         "settings.target_soc",
@@ -426,6 +444,106 @@ CURATED_SENSORS: tuple[CuratedSensor, ...] = (
         transform="duration_s",
         icon="mdi:battery-clock",
     ),
+    # === Distance & Range ===
+    CuratedSensor(
+        "mileage.value",
+        "Mileage",
+        "distance",
+        "km",
+        "total_increasing",
+        icon="mdi:counter",
+        unit_field="mileage.unit",
+        unit_resolver="distance",
+        suggested_display_precision=0,
+    ),
+    CuratedSensor(
+        "range.value",
+        "Electric range",
+        "distance",
+        "km",
+        "measurement",
+        icon="mdi:map-marker-distance",
+        unit_field="range.unit",
+        unit_resolver="distance",
+        suggested_display_precision=0,
+    ),
+    # === Climate ===
+    CuratedSensor(
+        "remaining_climate_time",
+        "Remaining climate time",
+        "duration",
+        "s",
+        "measurement",
+        transform="duration_s",
+    ),
+    CuratedSensor(
+        "residual_energy_in_percent",
+        "Residual energy",
+        None,
+        "%",
+        "measurement",
+        icon="mdi:battery",
+    ),
+    # === Temperature ===
+    CuratedSensor(
+        "min_temperature", "Battery min temperature", "temperature", "°C", "measurement"
+    ),
+    CuratedSensor(
+        "max_temperature", "Battery max temperature", "temperature", "°C", "measurement"
+    ),
+    # === Vehicle Status ===
+    CuratedSensor(
+        "mileage.value.timestamp",
+        "Last connected",
+        "timestamp",
+        None,
+        None,
+        icon="mdi:clock",
+    ),
+    # === Enum/Status Sensors ===
+    CuratedSensor(
+        "charging_state_report.current_charge_state",
+        "Charge state",
+        icon="mdi:ev-station",
+    ),
+    CuratedSensor(
+        "charging_state_report.charge_mode", "Charge mode", icon="mdi:ev-station"
+    ),
+    CuratedSensor(
+        "charging_state_report.charge_type", "Charge type", icon="mdi:power-plug"
+    ),
+    CuratedSensor(
+        "charging_state_report.charging_scenario",
+        "Charging scenario",
+        icon="mdi:ev-station",
+    ),
+    CuratedSensor(
+        "charging_state_report.immediate_action_state",
+        "Charging action state",
+        icon="mdi:ev-station",
+    ),
+    CuratedSensor(
+        "settings.charge_mode_selection", "Charge mode selection", icon="mdi:cog"
+    ),
+    CuratedSensor(
+        "settings.max_charge_current_ac", "Max AC charge current", icon="mdi:current-ac"
+    ),
+    CuratedSensor(
+        "window_heating_state", "Window heating", icon="mdi:car-defrost-rear"
+    ),
+    CuratedSensor("bem_level", "BEM level", None, None, None, icon="mdi:information"),
+)
+
+CURATED_BINARY_DOTTED: tuple[CuratedBinary, ...] = (
+    # === General Lock State ===
+    CuratedBinary("locked", "Vehicle locked", "lock", invert=True, icon="mdi:car-key"),
+)
+
+# ---------------------------------------------------------------------------
+# Curated sensors for pre-ID.x vehicles (flat field names)
+# ---------------------------------------------------------------------------
+
+CURATED_SENSORS_FLAT: tuple[CuratedSensor, ...] = (
     # === Distance & Range ===
     CuratedSensor(
         "mileage",
@@ -818,39 +936,12 @@ CURATED_SENSORS: tuple[CuratedSensor, ...] = (
     ),
     # === Enum/Status Sensors ===
     CuratedSensor(
-        "charging_state_report.current_charge_state",
-        "Charge state",
-        icon="mdi:ev-station",
-    ),
-    CuratedSensor(
-        "charging_state_report.charge_mode", "Charge mode", icon="mdi:ev-station"
-    ),
-    CuratedSensor(
-        "charging_state_report.charge_type", "Charge type", icon="mdi:power-plug"
-    ),
-    CuratedSensor(
-        "charging_state_report.charging_scenario",
-        "Charging scenario",
-        icon="mdi:ev-station",
-    ),
-    CuratedSensor(
-        "charging_state_report.immediate_action_state",
-        "Charging action state",
-        icon="mdi:ev-station",
-    ),
-    CuratedSensor(
-        "settings.charge_mode_selection", "Charge mode selection", icon="mdi:cog"
-    ),
-    CuratedSensor(
-        "settings.max_charge_current_ac", "Max AC charge current", icon="mdi:current-ac"
-    ),
-    CuratedSensor(
         "window_heating_state", "Window heating", icon="mdi:car-defrost-rear"
     ),
     CuratedSensor("bem_level", "BEM level", None, None, None, icon="mdi:information"),
 )
 
-CURATED_BINARY: tuple[CuratedBinary, ...] = (
+CURATED_BINARY_FLAT: tuple[CuratedBinary, ...] = (
     # === General Lock State ===
     CuratedBinary("locked", "Vehicle locked", "lock", invert=True, icon="mdi:car-key"),
     # === Individual Door Lock States (value 2=locked, 3=unlocked) ===
@@ -992,6 +1083,13 @@ CURATED_BINARY: tuple[CuratedBinary, ...] = (
     CuratedBinary("state_spoiler", "Spoiler", None, icon="mdi:car-sports"),
 )
 
+# ---------------------------------------------------------------------------
+# Combined fields for backward compatibility and field validation
+# ---------------------------------------------------------------------------
+
 CURATED_FIELDS: frozenset[str] = frozenset(
-    [s.field_name for s in CURATED_SENSORS] + [b.field_name for b in CURATED_BINARY]
+    [s.field_name for s in CURATED_SENSORS_DOTTED]
+    + [s.field_name for s in CURATED_SENSORS_FLAT]
+    + [b.field_name for b in CURATED_BINARY_DOTTED]
+    + [b.field_name for b in CURATED_BINARY_FLAT]
 )

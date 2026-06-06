@@ -15,19 +15,18 @@ from . import EudaConfigEntry
 from .const import raw_unique_id
 from .coordinator import EudaCoordinator
 from .data import (
-    CURATED_BINARY,
-    CURATED_SENSORS,
+    CURATED_BINARY_DOTTED,
+    CURATED_BINARY_FLAT,
+    CURATED_SENSORS_DOTTED,
+    CURATED_SENSORS_FLAT,
     UNIT_RESOLVERS,
     CuratedSensor,
     DataPoint,
+    detect_dataset_format,
     friendly_name,
     resolve_distance_unit,
 )
 from .entity import EudaEntity
-
-# fields owned by other platforms / not worth a raw sensor
-_BINARY_FIELDS = {b.field_name for b in CURATED_BINARY}
-_CURATED_SENSOR_FIELDS = {s.field_name for s in CURATED_SENSORS}
 
 
 async def async_setup_entry(
@@ -39,11 +38,24 @@ async def async_setup_entry(
     points: dict[str, DataPoint] = coordinator.data or {}
     present_fields = {dp.field_name for dp in points.values()}
 
+    # Detect dataset format and select appropriate curated group
+    format_type = detect_dataset_format(points)
+    curated_sensors = (
+        CURATED_SENSORS_DOTTED if format_type == "dotted" else CURATED_SENSORS_FLAT
+    )
+    curated_binary = (
+        CURATED_BINARY_DOTTED if format_type == "dotted" else CURATED_BINARY_FLAT
+    )
+
+    # Build field sets for exclusion from raw sensors
+    binary_fields = {b.field_name for b in curated_binary}
+    curated_sensor_fields = {s.field_name for s in curated_sensors}
+
     entities: list[SensorEntity] = []
 
     # curated numeric / text sensors (one per field, if present)
-    for curated in CURATED_SENSORS:
-        # Special handling for timestamp sensors (e.g., "mileage.timestamp")
+    for curated in curated_sensors:
+        # Special handling for timestamp sensors (e.g., "mileage.timestamp" or "mileage.value.timestamp")
         if ".timestamp" in curated.field_name:
             base_field = curated.field_name.replace(".timestamp", "")
             if base_field in present_fields:
@@ -53,7 +65,7 @@ async def async_setup_entry(
 
     # raw diagnostic sensors: every other unique key
     for key, dp in points.items():
-        if dp.field_name in _CURATED_SENSOR_FIELDS or dp.field_name in _BINARY_FIELDS:
+        if dp.field_name in curated_sensor_fields or dp.field_name in binary_fields:
             continue
         entities.append(EudaRawSensor(coordinator, key))
 
@@ -109,7 +121,7 @@ class EudaCuratedSensor(EudaEntity, SensorEntity):
 
     @property
     def native_value(self):
-        # Special handling for timestamp fields
+        # Special handling for timestamp fields (both "mileage.timestamp" and "mileage.value.timestamp")
         if ".timestamp" in self._curated.field_name:
             base_field = self._curated.field_name.replace(".timestamp", "")
             dp = _find_by_field(self.coordinator.data or {}, base_field)

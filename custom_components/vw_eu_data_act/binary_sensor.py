@@ -11,7 +11,13 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import EudaConfigEntry
 from .coordinator import EudaCoordinator
-from .data import CURATED_BINARY, CuratedBinary, DataPoint
+from .data import (
+    CURATED_BINARY_DOTTED,
+    CURATED_BINARY_FLAT,
+    CuratedBinary,
+    DataPoint,
+    detect_dataset_format,
+)
 from .entity import EudaEntity
 
 
@@ -24,9 +30,15 @@ async def async_setup_entry(
     points: dict[str, DataPoint] = coordinator.data or {}
     present_fields = {dp.field_name for dp in points.values()}
 
+    # Detect dataset format and select appropriate curated group
+    format_type = detect_dataset_format(points)
+    curated_binary = (
+        CURATED_BINARY_DOTTED if format_type == "dotted" else CURATED_BINARY_FLAT
+    )
+
     async_add_entities(
         EudaBinarySensor(coordinator, curated)
-        for curated in CURATED_BINARY
+        for curated in curated_binary
         if curated.field_name in present_fields
     )
 
