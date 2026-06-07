@@ -537,6 +537,9 @@ CURATED_SENSORS_DOTTED: tuple[CuratedSensor, ...] = (
 CURATED_BINARY_DOTTED: tuple[CuratedBinary, ...] = (
     # === General Lock State ===
     CuratedBinary("locked", "Vehicle locked", "lock", invert=True, icon="mdi:car-key"),
+    # ID.x datasets carry a flat-named parking_brake field even though most of
+    # their fields are dotted, so it belongs in the dotted group too.
+    CuratedBinary("parking_brake", "Parking brake", None, icon="mdi:car-brake-parking"),
 )
 
 # ---------------------------------------------------------------------------
