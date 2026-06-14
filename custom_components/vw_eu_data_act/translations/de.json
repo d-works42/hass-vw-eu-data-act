@@ -1,0 +1,38 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Volkswagen EU Data Act",
+        "description": "Für das EU Data Act portal mit den Volkswagen ID Zugangsdaten anmelden.",
+        "data": {
+          "email": "Email",
+          "password": "Passwort"
+        }
+      },
+      "vehicle": {
+        "title": "Fahrzeug auswählen",
+        "data": {
+          "vin": "Fahrzeug VIN"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Wiederanmelden",
+        "description": "Passwort für {email} eingeben.",
+        "data": {
+          "password": "Passwort"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Falsche Email oder Passwort.",
+      "cannot_connect": "Verbindung zum EU Data Act portal nicht möglich.",
+      "no_vehicles": "Keine Fahrzeuge in diesem Konto gefunden.",
+      "unknown": "Ein unerwarteter Fehler ist aufgetreten."
+    },
+    "abort": {
+      "already_configured": "Dieses Fahrzeug ist bereits konfiguriert.",
+      "auth": "Anmeldung fehlgeschlagen; bitte die Integration neu hinzufügen.",
+      "reauth_successful": "Wiederanmeldung war erfolgreich."
+    }
+  }
+}
